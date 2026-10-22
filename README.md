@@ -17,6 +17,9 @@ video system (EF9340/EF9341 overlay graphics) to the original Odyssey2/Videopac 
 output were adapted for the Pocket: a frame buffer re-times the console video to a fixed 320x240 @ 60 Hz
 signal and shows it pixel-exact (no resampling).
 
+v1.0.1 fixes the remaining G7000 input issue (continuous fire / non-responsive D-pad) and keeps the
+G7400 Plus graphics and score placement aligned with the MiSTer core.
+
 ## Installation
 
 1. Download `Videopac+_G7400_Pocket_<version>.zip` from the [Releases](../../releases) page and extract it

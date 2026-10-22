@@ -1,6 +1,4 @@
 # User-supplied ROM files must never be committed
-release/Assets/**/*.bin
-release/Assets/**/*.rom
 dist/
 __pycache__/
 *.sof

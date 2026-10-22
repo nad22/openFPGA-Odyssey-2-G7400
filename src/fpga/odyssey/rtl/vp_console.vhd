@@ -622,7 +622,7 @@ begin
   -- Read MUX
   -----------------------------------------------------------------------------
   db_to_cpu_s <= d_from_vdc_s when vdc_cs_n_s = '0' and vdc_rd_n_s = '0' else
-                 d_from_vpp_s when vpp_cs_n_s = '0' and vpp_rd_n_s = '0' else
+                 d_from_vpp_s when is_g7400_i = '1' and vpp_cs_n_s = '0' and vpp_rd_n_s = '0' else
                  d_from_ram_s when ram_cs_s = '1' and ram_cs_n_s = '0'   else
                  joys_s(0)    when rd_n_s = '0' and keyb_dec_s(2) = '0'  else
                  joys_s(1)    when rd_n_s = '0' and keyb_dec_s(1) = '0'  else

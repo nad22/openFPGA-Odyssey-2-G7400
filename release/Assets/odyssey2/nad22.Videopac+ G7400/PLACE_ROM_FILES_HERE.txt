@@ -1,8 +1,2 @@
-Place your own dumps here (not included):
-
-o2bios.bin            1024 bytes  Odyssey2 BIOS
-g7400bios.bin         1024 bytes  Videopac+ G7400 BIOS
-videopac_charset.bin   512 bytes  Videopac character set
-ef9340_charset.bin    2560 bytes  G7400 EF9340 character set
-
-Cartridge .bin files go into Assets/odyssey2/common/
+Place your own Odyssey2/Videopac/G7400 BIOS and character ROM dumps here.
+Files are not included in the public release zip.

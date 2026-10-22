@@ -568,19 +568,20 @@ wire [7:0] keyb_enc = ~{
 };
 reg clk_cpu_en;
 reg clk_vdc_en;
-reg [31:0] cpu_phase = 32'd0;
-reg [31:0] vdc_phase = 32'd0;
 reg [1:0] previous_system_mode = 2'd0;
 reg [7:0] mode_reset_count = 8'hFF;
 wire machine_reset_n = reset_n && (mode_reset_count == 0);
-// The CPU clock is locked to the VDC clock at exactly 3/4 (NTSC) and 5/6 (PAL), like the real
-// machine, so the raster timing seen by the CPU does not drift against the video lines.
-localparam [31:0] VDC_NTSC_STEP = (((64'd7159090 << 32) / 74250000) / 4) * 4;
-localparam [31:0] VDC_PAL_STEP = (((64'd7094000 << 32) / 74250000) / 6) * 6;
-localparam [31:0] CPU_NTSC_STEP = (VDC_NTSC_STEP / 4) * 3;
-localparam [31:0] CPU_PAL_STEP = (VDC_PAL_STEP / 6) * 5;
-wire [32:0] cpu_phase_sum = {1'b0, cpu_phase} + {1'b0, (system_mode == 2'd2 ? CPU_NTSC_STEP : CPU_PAL_STEP)};
-wire [32:0] vdc_phase_sum = {1'b0, vdc_phase} + {1'b0, (system_mode == 2'd2 ? VDC_NTSC_STEP : VDC_PAL_STEP)};
+// Master tick = 6x VDC clock (NTSC) or 10x VDC clock (PAL). On this tick the same counters as the
+// MiSTer core generate the CPU (every 8th / 12th tick) and VDC (every 6th / 10th tick) enables, so
+// the CPU/VDC phase relation is identical to the MiSTer core.
+localparam [31:0] MASTER_NTSC_STEP = (64'd42954540 << 32) / 74250000;
+localparam [31:0] MASTER_PAL_STEP = (64'd70940000 << 32) / 74250000;
+reg [31:0] master_phase = 32'd0;
+reg [3:0] cpu_ctr = 4'd0;
+reg [3:0] vdc_ctr = 4'd0;
+wire [32:0] master_phase_sum = {1'b0, master_phase} + {1'b0, (system_mode == 2'd2 ? MASTER_NTSC_STEP : MASTER_PAL_STEP)};
+wire [3:0] cpu_ctr_max = (system_mode == 2'd2) ? 4'd7 : 4'd11;
+wire [3:0] vdc_ctr_max = (system_mode == 2'd2) ? 4'd5 : 4'd9;
 wire [31:0] palette_color;
 wire video_active = !video_hblank && !video_vblank;
 wire [3:0] snd_vec;
@@ -613,12 +614,17 @@ always @(posedge clk_74a) begin
     else
         bios_word_q <= bios_mem[bios_addr[9:2]];
     bios_lane_q <= bios_addr[1:0];
-    char_word_q <= char_mem[char_addr[8:2]];
-    char_lane_q <= char_addr[1:0];
+    // The MiSTer ROMs only update their output while the read enable is active and hold it otherwise.
+    if (char_en) begin
+        char_word_q <= char_mem[char_addr[8:2]];
+        char_lane_q <= char_addr[1:0];
+    end
     ef_char_word_q <= ef_char_mem[ef_char_addr[11:2]];
     ef_char_lane_q <= ef_char_addr[1:0];
-    cart_word_q <= cart_mem[cart_rom_addr[13:2]];
-    cart_lane_q <= cart_rom_addr[1:0];
+    if (!cart_psen_n) begin
+        cart_word_q <= cart_mem[cart_rom_addr[13:2]];
+        cart_lane_q <= cart_rom_addr[1:0];
+    end
 
     if (bridge_wr) begin
         if (bridge_addr >= O2_BIOS_BASE && bridge_addr < G7400_BIOS_BASE)
@@ -653,25 +659,33 @@ always @* begin
     endcase
 end
 
-assign joy_up_n = {~player2_key[0], ~player1_key[0]};
-assign joy_down_n = {~player2_key[1], ~player1_key[1]};
-assign joy_left_n = {~player2_key[2], ~player1_key[2]};
-assign joy_right_n = {~player2_key[3], ~player1_key[3]};
-assign joy_action_n = {~player2_key[5], ~player1_key[5]};
+// Index 1 = left joystick (player 1), index 0 = right joystick (player 2), as in the MiSTer top level.
+assign joy_up_n = {~player1_key[0], ~player2_key[0]};
+assign joy_down_n = {~player1_key[1], ~player2_key[1]};
+assign joy_left_n = {~player1_key[2], ~player2_key[2]};
+assign joy_right_n = {~player1_key[3], ~player2_key[3]};
+assign joy_action_n = {~(player1_key[4] | player1_key[5]), ~(player2_key[4] | player2_key[5])};
 
 always @(posedge clk_74a) begin
     if (!reset_n) begin
-        cpu_phase <= 32'h80000000;
-        vdc_phase <= 32'd0;
+        master_phase <= 32'd0;
+        cpu_ctr <= 4'd0;
+        vdc_ctr <= 4'd0;
         clk_cpu_en <= 1'b0;
         clk_vdc_en <= 1'b0;
         mode_reset_count <= 8'hFF;
         previous_system_mode <= system_mode;
     end else begin
-        cpu_phase <= cpu_phase_sum[31:0];
-        vdc_phase <= vdc_phase_sum[31:0];
-        clk_cpu_en <= cpu_phase_sum[32];
-        clk_vdc_en <= vdc_phase_sum[32];
+        master_phase <= master_phase_sum[31:0];
+        clk_cpu_en <= 1'b0;
+        clk_vdc_en <= 1'b0;
+        if (system_mode != previous_system_mode || mode_reset_count != 0) begin
+            cpu_ctr <= 4'd0;
+            vdc_ctr <= 4'd0;
+        end else if (master_phase_sum[32]) begin
+            if (cpu_ctr >= cpu_ctr_max) begin cpu_ctr <= 4'd0; clk_cpu_en <= 1'b1; end else cpu_ctr <= cpu_ctr + 1'b1;
+            if (vdc_ctr >= vdc_ctr_max) begin vdc_ctr <= 4'd0; clk_vdc_en <= 1'b1; end else vdc_ctr <= vdc_ctr + 1'b1;
+        end
         if (system_mode != previous_system_mode) begin
             previous_system_mode <= system_mode;
             mode_reset_count <= 8'hFF;
@@ -816,7 +830,7 @@ wire out_active = out_x >= OUT_H_BPORCH && out_x < OUT_H_ACTIVE + OUT_H_BPORCH &
 // source pixel keeps the same width after the Pocket's integer scaling.
 wire signed [11:0] vis_x = $signed({2'b00, out_x}) - OUT_H_BPORCH;
 wire signed [11:0] vis_y = $signed({2'b00, out_y}) - OUT_V_BPORCH;
-wire signed [11:0] pad_x = (OUT_H_ACTIVE - $signed({2'b00, meas_w})) >>> 1;
+wire signed [11:0] pad_x = (meas_w > OUT_H_ACTIVE) ? -12'sd3 : (OUT_H_ACTIVE - $signed({2'b00, meas_w})) >>> 1;
 wire signed [11:0] pad_y = (OUT_V_ACTIVE - $signed({2'b00, meas_h})) >>> 1;
 wire signed [11:0] src_col = vis_x - pad_x + H_SHIFT;
 wire signed [11:0] src_row = vis_y - pad_y;
