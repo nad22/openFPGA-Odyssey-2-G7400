@@ -1,0 +1,56 @@
+{
+  "data": {
+    "magic": "APF_VER_1",
+    "data_slots": [
+      {
+        "name": "Cartridge",
+        "id": 256,
+        "required": true,
+        "parameters": "0x81",
+        "extensions": ["bin"],
+        "size_maximum": "0x4000",
+        "address": "0x00008000"
+      },
+      {
+        "name": "Odyssey2 BIOS",
+        "id": 259,
+        "required": true,
+        "filename": "o2bios.bin",
+        "address": "0x00000000",
+        "parameters": "0x2",
+        "extensions": ["bin"],
+        "size_exact": 1024
+      },
+      {
+        "name": "Videopac G7400 BIOS",
+        "id": 263,
+        "required": true,
+        "filename": "g7400bios.bin",
+        "address": "0x00000800",
+        "parameters": "0x2",
+        "extensions": ["bin"],
+        "size_exact": 1024
+      },
+      {
+        "name": "Videopac Character Set",
+        "id": 264,
+        "required": true,
+        "filename": "videopac_charset.bin",
+        "address": "0x00000C00",
+        "parameters": "0x2",
+        "extensions": ["bin"],
+        "size_exact": 512
+      },
+      {
+        "name": "G7400 EF9340 Character Set",
+        "id": 265,
+        "required": true,
+        "filename": "ef9340_charset.bin",
+        "address": "0x00000E00",
+        "parameters": "0x2",
+        "extensions": ["bin"],
+        "size_exact": 2560
+      }
+    ]
+  }
+}

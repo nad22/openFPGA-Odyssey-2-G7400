@@ -1,0 +1,50 @@
+{
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
+      {
+        "name": "Videopac+ G7400",
+        "id": 1,
+        "type": "radio",
+        "group": 100,
+        "enabled": true,
+        "persist": true,
+        "address": "0x10000250",
+        "defaultval": 0,
+        "value": 0
+      },
+      {
+        "name": "Videopac G7000 (PAL)",
+        "id": 2,
+        "type": "radio",
+        "group": 100,
+        "enabled": true,
+        "persist": true,
+        "address": "0x10000250",
+        "value": 1
+      },
+      {
+        "name": "Odyssey2 (NTSC)",
+        "id": 3,
+        "type": "radio",
+        "group": 100,
+        "enabled": true,
+        "persist": true,
+        "address": "0x10000250",
+        "value": 2
+      },
+      {
+        "name": "Swap Controllers",
+        "id": 5,
+        "type": "check",
+        "enabled": true,
+        "persist": true,
+        "writeonly": true,
+        "address": "0x1000024c",
+        "defaultval": 0,
+        "value": 1,
+        "mask": "0xFFFFFFFE"
+      }
+    ]
+  }
+}

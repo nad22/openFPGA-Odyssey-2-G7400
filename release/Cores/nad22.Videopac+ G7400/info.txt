@@ -1,0 +1,7 @@
+Videopac+ G7400 / Odyssey2 for Analogue Pocket
+
+The G7400 mode is selected by default. Use the core menu to switch to Videopac G7000 (PAL) or Odyssey2 (NTSC).
+
+Required BIOS and character ROM data files are listed in data.json. These files are not included; place the matching files in `Assets/odyssey2/nad22.Videopac+ G7400/` on the Pocket SD card before launching the core.
+
+Cartridges up to 16 KiB are supported. Current port limitations: The Voice and USB keyboard input are not implemented.

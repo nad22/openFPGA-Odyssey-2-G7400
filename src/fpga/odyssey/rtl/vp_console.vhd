@@ -1,0 +1,688 @@
+-------------------------------------------------------------------------------
+--
+-- FPGA Videopac
+--
+-- $Id: vp_console.vhd,v 1.15 2007/04/07 10:49:23 arnim Exp $
+-- $Name: videopac_rel_1_0 $
+--
+-- Toplevel of Videopac console
+--
+-- References:
+--
+-- * Rene's VIDEOPAC tech info
+--   http://www.geocities.com/rene_g7400/vp_info.html
+--
+-- * Soeren's VIDEOPAC G7000 site
+--   http://soeren.informationstheater.de/g7000/Index.html
+--
+-------------------------------------------------------------------------------
+--
+-- Copyright (c) 2007, Arnim Laeuger (arnim.laeuger@gmx.net)
+--
+-- All rights reserved
+--
+-- Redistribution and use in source and synthezised forms, with or without
+-- modification, are permitted provided that the following conditions are met:
+--
+-- Redistributions of source code must retain the above copyright notice,
+-- this list of conditions and the following disclaimer.
+--
+-- Redistributions in synthesized form must reproduce the above copyright
+-- notice, this list of conditions and the following disclaimer in the
+-- documentation and/or other materials provided with the distribution.
+--
+-- Neither the name of the author nor the names of other contributors may
+-- be used to endorse or promote products derived from this software without
+-- specific prior written permission.
+--
+-- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+-- AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+-- THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+-- PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE
+-- LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+-- CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+-- SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+-- INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+-- CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+-- ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+-- POSSIBILITY OF SUCH DAMAGE.
+--
+-- Please report bugs to the author, but before you do so, please
+-- make sure that this is not a derivative work and that
+-- you have the latest version of this file.
+--
+-------------------------------------------------------------------------------
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
+
+entity vp_console is
+  port (
+    -- System Interface -------------------------------------------------------
+    is_pal_g       : in  integer;
+    clk_i          : in  std_logic;
+    clk_cpu_en_i   : in  std_logic;
+    clk_vdc_en_i   : in  std_logic;
+	 clk_750k       : in  std_logic;
+	 clk_2m5        : in  std_logic;
+    res_n_i        : in  std_logic;
+    -- Cartridge Interface ----------------------------------------------------
+    cart_cs_o      : out std_logic;
+    cart_cs_n_o    : out std_logic;
+    cart_wr_n_o    : out std_logic;
+    cart_a_o       : out std_logic_vector(11 downto 0);
+    cart_d_i       : in  std_logic_vector( 7 downto 0);
+    cart_d_o       : out std_logic_vector( 7 downto 0);
+    cart_bs0_o     : out std_logic;
+    cart_bs1_o     : out std_logic;
+    cart_psen_n_o  : out std_logic;
+    cart_t0_i      : in  std_logic;
+    cart_t0_o      : out std_logic;
+    cart_t0_dir_o  : out std_logic;
+	 -- Char ROM ---------------------------------------------------------------
+	 char_a_o       : out std_logic_vector( 8 downto 0);
+    char_d_i       : in  std_logic_vector( 7 downto 0);
+	 char_en        : out std_logic;
+    -- G7400 / EF9340-9341 Interface -------------------------------------------
+    is_g7400_i     : in  std_logic;
+    bios_addr_o    : out std_logic_vector(10 downto 0);
+    bios_data_i    : in  std_logic_vector(7 downto 0);
+    ef_char_a_o    : out std_logic_vector(11 downto 0);
+    ef_char_d_i    : in  std_logic_vector( 7 downto 0);
+    ef_char_en_o   : out std_logic;
+    -- Joystick Interface -----------------------------------------------------
+    -- idx = 0 : left joystick
+    -- idx = 1 : right joystick
+    joy_up_n_i     : in  std_logic_vector( 1 downto 0);
+    joy_down_n_i   : in  std_logic_vector( 1 downto 0);
+    joy_left_n_i   : in  std_logic_vector( 1 downto 0);
+    joy_right_n_i  : in  std_logic_vector( 1 downto 0);
+    joy_action_n_i : in  std_logic_vector( 1 downto 0);
+    -- Keyboard Interface -----------------------------------------------------
+    keyb_dec_o     : out std_logic_vector( 6 downto 1);
+    keyb_enc_i     : in  std_logic_vector(14 downto 7);
+    -- Video Interface --------------------------------------------------------
+    r_o            : out std_logic;
+    g_o            : out std_logic;
+    b_o            : out std_logic;
+    l_o            : out std_logic;
+    hsync_n_o      : out std_logic;
+    vsync_n_o      : out std_logic;
+    hbl_o          : out std_logic;
+    vbl_o          : out std_logic;
+    hblank_o       : out std_logic;
+    vblank_o       : out std_logic;
+    -- Sound Interface --------------------------------------------------------
+    snd_o          : out std_logic;
+    snd_vec_o      : out std_logic_vector(3 downto 0);
+	 ---------------------------------------------------------------------------
+	 --- The voice -------------------------------------------------------------
+	 ---------------------------------------------------------------------------
+	 snd_voice_o     : out signed(15 downto 0);
+    voice_enable    : in  std_logic
+
+  );
+
+end vp_console;
+
+
+library ieee;
+use ieee.numeric_std.all;
+
+use work.t48_system_comp_pack.t8048_notri;
+use work.i8244_core_comp_pack.i8244_top_sync;
+
+-- pragma translate_off
+use work.vp_tb_pack.all;
+-- pragma translate_on
+
+architecture struct of vp_console is
+
+  component generic_ram_ena
+    generic (
+      addr_width_g : integer := 10;
+      data_width_g : integer := 8
+    );
+    port (
+      clk_i : in  std_logic;
+      a_i   : in  std_logic_vector(addr_width_g-1 downto 0);
+      we_i  : in  std_logic;
+      ena_i : in  std_logic;
+      d_i   : in  std_logic_vector(data_width_g-1 downto 0);
+      d_o   : out std_logic_vector(data_width_g-1 downto 0)
+    );
+  end component;
+
+  component vp_glue
+    port (
+      clk_i       : in  std_logic;
+      res_n_i     : in  std_logic;
+      -- Address Interface ----------------------------------------------------
+      cpu_db_i    : in  std_logic_vector(7 downto 0);
+      ale_i       : in  std_logic;
+      rd_n_i      : in  std_logic;
+      wr_n_i      : in  std_logic;
+      p13_i       : in  std_logic;
+      p14_i       : in  std_logic;
+      p16_i       : in  std_logic;
+      p15_i       : in  std_logic;
+      a_low_o     : out std_logic_vector(7 downto 0);
+      cart_cs_o   : out std_logic;
+      cart_cs_n_o : out std_logic;
+      cart_wr_n_o : out std_logic;
+      ram_cs_o    : out std_logic;
+      ram_cs_n_o  : out std_logic;
+      ram_wr_n_o  : out std_logic;
+      vdc_cs_n_o  : out std_logic;
+      vdc_rd_n_o  : out std_logic;
+      vdc_wr_n_o  : out std_logic;
+      vpp_cs_n_o  : out std_logic;
+      vpp_rd_n_o  : out std_logic;
+      vpp_wr_n_o  : out std_logic;
+      -- Video Interface ------------------------------------------------------
+      hbl_i       : in  std_logic;
+      vbl_i       : in  std_logic;
+      l_i         : in  std_logic;
+      p17_i       : in  std_logic;
+      blank_o     : out std_logic;
+      l_o         : out std_logic
+    );
+  end component;
+
+  -- CPU signals
+  signal int_n_s,
+         rd_n_s,
+         wr_n_s,
+         ale_s          : std_logic;
+  signal db_to_cpu_s,
+         db_from_cpu_s,
+         db_s           : std_logic_vector(7 downto 0);
+  signal db_dir_s       : std_logic;
+  signal p2_to_cpu_s,
+         p2_from_cpu_s  : std_logic_vector(7 downto 0);
+  signal p1_to_cpu_s,
+         p1_from_cpu_s  : std_logic_vector(7 downto 0);
+			
+  -- glue signals
+  signal a_low_s     : std_logic_vector( 7 downto 0);
+  signal a_s         : std_logic_vector(11 downto 0);
+  signal blank_s     : std_logic;
+  signal vdc_cs_n_s,
+         vdc_rd_n_s,
+         vdc_wr_n_s  : std_logic;
+
+  -- VDC signals
+  signal hbl_s,
+         vbl_s,
+         hsync_s,
+         vsync_s      : std_logic;
+  signal l_from_vdc_s : std_logic;
+  signal l_mixed_s     : std_logic;
+  signal d_from_vdc_s : std_logic_vector(7 downto 0);
+  signal r_from_vdc_s,
+         g_from_vdc_s,
+         b_from_vdc_s  : std_logic;
+  signal hpos_s,
+         vpos_s        : std_logic_vector(8 downto 0);
+  signal ef_hpos_s,
+         ef_vpos_s     : std_logic_vector(8 downto 0);
+  signal ef_win_s      : std_logic;
+  signal hblank_vdc_s,
+         vblank_vdc_s  : std_logic;
+  signal ef_crop_s     : std_logic;
+
+  -- G7400 / EF9340-9341 (VPP) signals
+  signal vpp_cs_n_s,
+         vpp_rd_n_s,
+         vpp_wr_n_s     : std_logic;
+  signal d_from_vpp_s   : std_logic_vector(7 downto 0);
+  signal ef_rgb_s        : std_logic_vector(2 downto 0);
+  signal ef_opaque_s     : std_logic;
+
+  -- i8243 port expander (G7400 mixing table loader) signals
+  signal prog_n_s        : std_logic;
+  signal prog_n_d_q      : std_logic := '1';
+  signal prog_fall_en_s,
+         prog_rise_en_s  : std_logic;
+  signal p2_from_t8243_s : std_logic_vector(3 downto 0);
+  signal p2_en_t8243_s   : std_logic;
+  signal p2_to_cpu_mux_s : std_logic_vector(7 downto 0);
+  signal p4_o_s, p5_o_s,
+         p6_o_s, p7_o_s  : std_logic_vector(3 downto 0);
+  signal mix_ef9340_s,
+         mix_i8244_s     : std_logic_vector(7 downto 0);
+
+  -- RAM signals
+  signal d_from_ram_s : std_logic_vector(7 downto 0);
+  signal ram_cs_s,
+         ram_cs_n_s,
+         ram_wr_n_s,
+         ram_wr_s     : std_logic;
+
+  signal keyb_dec_s : std_logic_vector(6 downto 1);
+
+  subtype joy_t  is std_logic_vector(7 downto 0);
+  type    joys_t is array (natural range 0 to 1) of joy_t;
+  signal  joys_s : joys_t;
+
+  signal vdd_s,
+         gnd_s  : std_logic;
+
+  -- The Voice
+  signal sp0256_ldq : std_logic;
+  signal sp0256_load : std_logic;
+  signal sp0256_fifo_we : std_logic;
+  signal sp0256_p14 : std_logic;
+  signal sp0256_wr  : std_logic := '1';
+  signal sp0256_rst : std_logic := '1';
+  signal sp0256_ff  : std_logic := '1';
+  signal sp0256_ff_n  : std_logic := '1';
+  signal cart_do_s : std_logic_vector(7 downto 0);
+  signal sp0256_di : std_logic_vector(6 downto 0);
+  signal sp0256_do : std_logic_vector(6 downto 0);
+  signal cpu_t0_s  : std_logic := '0';
+  signal SP0256_trig : std_logic := '0';
+  signal SP0256_trig_ff : std_logic := '0';
+  signal fifo_empty_s : std_logic;
+  signal stage : integer := 1;
+
+  signal cart_cs_s : std_logic;
+  signal cart_wr_n_s : std_logic;
+
+
+		
+begin
+
+  vdd_s <= '1';
+  gnd_s <= '0';
+
+
+  -- XROM not (p1_from_cpu_s(1) and p1_from_cpu_s(6)) and psen_n_o
+  -----------------------------------------------------------------------------
+  -- I8048 uController
+  -----------------------------------------------------------------------------
+  t8048_b : t8048_notri
+    generic map (
+      gate_port_input_g => 1
+    )
+    port map (
+      xtal_i        => clk_i,
+      xtal_en_i     => clk_cpu_en_i,
+      reset_n_i     => res_n_i,
+      t0_i          => not fifo_empty_s, --cart_t0_i,
+      t0_o          => cart_t0_o,
+      t0_dir_o      => cart_t0_dir_o,
+      int_n_i       => int_n_s,
+      ea_i          => gnd_s,
+      rd_n_o        => rd_n_s,
+      psen_n_o      => cart_psen_n_o ,
+      wr_n_o        => wr_n_s,
+      ale_o         => ale_s,
+      db_i          => db_to_cpu_s,
+      db_o          => db_from_cpu_s,
+      db_dir_o      => db_dir_s,
+      t1_i          => blank_s,
+      p2_i          => p2_to_cpu_mux_s,
+      p2_o          => p2_from_cpu_s,
+      p2l_low_imp_o => open,
+      p2h_low_imp_o => open,
+      p1_i          => p1_to_cpu_s,
+      p1_o          => p1_from_cpu_s,
+      p1_low_imp_o  => open,
+      prog_n_o      => prog_n_s,
+      is_g7400_i    => is_g7400_i,
+      bios_addr_o   => bios_addr_o,
+      bios_data_i   => bios_data_i
+    );
+  --
+  p1_to_cpu_s      <= (others => '1');
+  a_s(11 downto 8) <= p2_from_cpu_s(3 downto 0);
+  a_s( 7 downto 0) <= a_low_s;
+  cart_a_o         <= a_s;
+  cart_bs0_o       <= p1_from_cpu_s(0);
+  cart_bs1_o       <= p1_from_cpu_s(1);
+
+  -- i8243 readback overlay: when the expander drives P20-P23 (ANLD/ORLD),
+  -- substitute its nibble onto the CPU's P2 input; otherwise pass the
+  -- keyboard encoder result (driven in process keyb below) unchanged.
+  p2_to_cpu_mux_s(7 downto 4) <= p2_to_cpu_s(7 downto 4);
+  p2_to_cpu_mux_s(3 downto 0) <= p2_from_t8243_s when p2_en_t8243_s = '1' else
+                                 p2_to_cpu_s(3 downto 0);
+
+
+  -----------------------------------------------------------------------------
+  -- Some glue logic
+  -----------------------------------------------------------------------------
+  glue_b : vp_glue
+    port map (
+      clk_i       => clk_i,
+      res_n_i     => res_n_i,
+      cpu_db_i    => db_s,
+      ale_i       => ale_s,
+      rd_n_i      => rd_n_s,
+      wr_n_i      => wr_n_s,
+      p13_i       => p1_from_cpu_s(3),
+      p14_i       => p1_from_cpu_s(4),
+      p16_i       => p1_from_cpu_s(6),
+      p15_i       => p1_from_cpu_s(5),
+      a_low_o     => a_low_s,
+      cart_cs_o   => cart_cs_s,
+      cart_cs_n_o => cart_cs_n_o,
+      cart_wr_n_o => cart_wr_n_s,
+      ram_cs_o    => ram_cs_s,
+      ram_cs_n_o  => ram_cs_n_s,
+      ram_wr_n_o  => ram_wr_n_s,
+      vdc_cs_n_o  => vdc_cs_n_s,
+      vdc_rd_n_o  => vdc_rd_n_s,
+      vdc_wr_n_o  => vdc_wr_n_s,
+      vpp_cs_n_o  => vpp_cs_n_s,
+      vpp_rd_n_o  => vpp_rd_n_s,
+      vpp_wr_n_o  => vpp_wr_n_s,
+      hbl_i       => hbl_s,
+      vbl_i       => vbl_s,
+      l_i         => l_mixed_s,
+      p17_i       => p1_from_cpu_s(7),
+      blank_o     => blank_s,
+      l_o         => l_o
+    );
+  --
+  cart_d_o <= db_from_cpu_s;
+  cart_cs_o   <= cart_cs_s;
+  cart_wr_n_o <= cart_wr_n_s;
+
+
+  -----------------------------------------------------------------------------
+  -- I8244 VDC
+  -----------------------------------------------------------------------------
+  vdc_b : i8244_top_sync
+    port map (
+      is_pal_g   => is_pal_g,
+      clk_i      => clk_i,
+      clk_en_i   => clk_vdc_en_i,
+      res_n_i    => res_n_i,
+      intr_n_o   => int_n_s,
+      stb_i      => gnd_s,
+      bg_o       => open,
+      hsync_o    => hsync_s,
+      vsync_o    => vsync_s,
+      ms_i       => vdd_s,
+      hbl_o      => hbl_s,
+		hblank_o   => hblank_vdc_s,
+      vbl_i      => gnd_s,
+      vbl_o      => vbl_s,
+      vblank_o   => vblank_vdc_s,
+      cx_i       => gnd_s,
+      l_o        => l_from_vdc_s,
+      cs_n_i     => vdc_cs_n_s,
+      wr_n_i     => vdc_wr_n_s,
+      rd_n_i     => vdc_rd_n_s,
+      din_i      => db_s,
+      dout_o     => d_from_vdc_s,
+      dout_en_o  => open,
+      r_o        => r_from_vdc_s,
+      g_o        => g_from_vdc_s,
+      b_o        => b_from_vdc_s,
+      ale_i      => ale_s,
+      snd_o      => snd_o,
+      snd_vec_o  => snd_vec_o,
+		char_a_o   => char_a_o,
+		char_d_i   => char_d_i,
+		char_en    => char_en,
+      hpos_o     => hpos_s,
+      vpos_o     => vpos_s
+    );
+  --
+  hsync_n_o <= not hsync_s;
+  vsync_n_o <= not vsync_s;
+  hbl_o     <= hbl_s;
+  vbl_o     <= vbl_s;
+
+
+  -----------------------------------------------------------------------------
+  -- G7400 / EF9340-9341 (VPP) overlay graphics
+  -----------------------------------------------------------------------------
+  ef9340_b : entity work.ef9340_top
+    port map (
+      clk_i      => clk_i,
+      clk_en_i   => clk_vdc_en_i,
+      res_n_i    => res_n_i,
+      cs_n_i     => vpp_cs_n_s,
+      rd_n_i     => vpp_rd_n_s,
+      wr_n_i     => vpp_wr_n_s,
+      addr_i     => a_low_s(1 downto 0),
+      din_i      => db_s,
+      dout_o     => d_from_vpp_s,
+      hpos_i     => ef_hpos_s,
+      vpos_i     => ef_vpos_s,
+      char_a_o   => ef_char_a_o,
+      char_d_i   => ef_char_d_i,
+      rgb_o      => ef_rgb_s,
+      opaque_o   => ef_opaque_s
+    );
+  --
+  ef_char_en_o <= '1';
+
+  -- The EF image's first pixel/line maps to raster x=13/y=2. The 10-line
+  -- service row ends at raster y=11, just above the active game crop.
+  ef_hpos_s <= std_logic_vector(unsigned(hpos_s) - 7);
+  ef_vpos_s <= std_logic_vector(unsigned(vpos_s) - 2);
+  ef_win_s  <= '1' when unsigned(ef_hpos_s) < 320 and unsigned(ef_vpos_s) < 250
+               else '0';
+
+  -- Once a Plus game has programmed the mix tables, crop the output to the
+  -- 320x219 EF area (raster x 10..329, y 12..230): this hides the
+  -- disabled service row on top and the unused side borders.
+  ef_crop_s <= '1' when is_g7400_i = '1' and mix_i8244_s /= x"FF" else '0';
+  hblank_o  <= '1' when ef_crop_s = '1' and
+                        (unsigned(hpos_s) < 14 or unsigned(hpos_s) > 320)
+               else hblank_vdc_s;
+  vblank_o  <= '1' when ef_crop_s = '1' and
+                        (unsigned(vpos_s) < 12 or unsigned(vpos_s) > 240)
+               else vblank_vdc_s;
+
+  -----------------------------------------------------------------------------
+  -- PROG edge detector for the i8243.
+  --
+  -- The real 8243 latches the port select + instruction code from P2 on the
+  -- FALLING edge of PROG, and executes the actual port transfer on the
+  -- RISING edge of PROG. t8243_core's clk_fall_en_i/clk_rise_en_i inputs
+  -- must therefore only pulse ONCE per PROG edge, not on every CPU clock
+  -- tick - otherwise ctrl_seq keeps re-decoding P2 (and port_seq keeps
+  -- re-latching) throughout the whole PROG-low window, misinterpreting the
+  -- data phase of a MOVD/ANLD/ORLD instruction as a new port-select/
+  -- instruction code and corrupting the mixing tables.
+  -----------------------------------------------------------------------------
+  process (clk_i)
+  begin
+    if rising_edge(clk_i) then
+      if clk_cpu_en_i = '1' then
+        prog_n_d_q <= prog_n_s;
+      end if;
+    end if;
+  end process;
+
+  prog_fall_en_s <= clk_cpu_en_i and prog_n_d_q and not prog_n_s;
+  prog_rise_en_s <= clk_cpu_en_i and (not prog_n_d_q) and prog_n_s;
+
+  -----------------------------------------------------------------------------
+  -- i8243 port expander - loads the G7400 priority mixing tables via P2/
+  -- P4-P7 (CPU PROG strobe). Only meaningful when is_g7400_i = '1'.
+  --
+  -- t8243_core supplies the priority tables used by the video mixer below.
+  -----------------------------------------------------------------------------
+  t8243_b : entity work.t8243_core
+    port map (
+      clk_i         => clk_i,
+      clk_rise_en_i => prog_rise_en_s,
+      clk_fall_en_i => prog_fall_en_s,
+      reset_n_i     => res_n_i,
+      cs_n_i        => '0',
+      prog_n_i      => prog_n_s,
+      p2_i          => p2_from_cpu_s(3 downto 0),
+      p2_o          => p2_from_t8243_s,
+      p2_en_o       => p2_en_t8243_s,
+      p4_i          => (others => '1'),
+      p4_o          => p4_o_s,
+      p4_en_o       => open,
+      p5_i          => (others => '1'),
+      p5_o          => p5_o_s,
+      p5_en_o       => open,
+      p6_i          => (others => '1'),
+      p6_o          => p6_o_s,
+      p6_en_o       => open,
+      p7_i          => (others => '1'),
+      p7_o          => p7_o_s,
+      p7_en_o       => open
+    );
+  --
+  mix_ef9340_s <= p4_o_s & p5_o_s;
+  mix_i8244_s  <= p6_o_s & p7_o_s;
+
+  -----------------------------------------------------------------------------
+  -- Transparent EF9340 pixels show the i8244 background; opaque pixels
+  -- follow the programmed priority table. Non-G7400 video passes through.
+  -- NOTE: only R/G/B are mixed; the luminance/L output continues to follow
+  -- the existing i8244+vp_glue formula unchanged in both cases (mixing the
+  -- EF9340 "i2" luminance value into L is not implemented - documented
+  -- limitation).
+  -----------------------------------------------------------------------------
+  mix: process (is_g7400_i, ef_opaque_s, ef_rgb_s, ef_win_s,
+                r_from_vdc_s, g_from_vdc_s, b_from_vdc_s, l_from_vdc_s,
+                mix_ef9340_s, mix_i8244_s)
+    variable i8244_rgb_v : std_logic_vector(2 downto 0);
+    variable use_i8244_v : boolean;
+  begin
+    -- mix tables are indexed like MAME's colour index: bit0=R, bit1=G, bit2=B
+    i8244_rgb_v := b_from_vdc_s & g_from_vdc_s & r_from_vdc_s;
+
+    if is_g7400_i = '1' then
+      use_i8244_v := (ef_opaque_s = '0' and ef_win_s = '1') or
+                     mix_i8244_s(to_integer(unsigned(i8244_rgb_v))) = '1';
+      if use_i8244_v then
+        r_o     <= r_from_vdc_s;
+        g_o     <= g_from_vdc_s;
+        b_o     <= b_from_vdc_s;
+        l_mixed_s <= l_from_vdc_s;
+      else
+        if ef_opaque_s = '0' then
+          r_o <= '0'; g_o <= '0'; b_o <= '0';
+          l_mixed_s <= not mix_ef9340_s(0);
+        else
+          r_o     <= ef_rgb_s(0);
+          g_o     <= ef_rgb_s(1);
+          b_o     <= ef_rgb_s(2);
+          l_mixed_s <= not mix_ef9340_s(to_integer(unsigned(ef_rgb_s)));
+        end if;
+      end if;
+
+    else
+      r_o     <= r_from_vdc_s;
+      g_o     <= g_from_vdc_s;
+      b_o     <= b_from_vdc_s;
+      l_mixed_s <= l_from_vdc_s;
+    end if;
+  end process mix;
+
+
+  -- pragma translate_off
+  tb_clk_s         <= clk_i;
+  tb_ale_s         <= ale_s;
+  tb_vdc_cs_n_s    <= vdc_cs_n_s;
+  tb_vdc_wr_n_s    <= vdc_wr_n_s;
+  tb_vdc_rd_n_s    <= vdc_rd_n_s;
+  tb_db_from_cpu_s <= db_s;
+  tb_d_from_vdc_s  <= d_from_vdc_s;
+  tb_vbl_s         <= vbl_s;
+  -- pragma translate_on
+
+
+  -----------------------------------------------------------------------------
+  -- 128 bytes RAM
+  -----------------------------------------------------------------------------
+  ram_wr_s <= ram_cs_s and not ram_cs_n_s and not ram_wr_n_s;
+  --
+  ram_128_b : generic_ram_ena
+    generic map (
+      addr_width_g => 7,
+      data_width_g => 8
+    )
+    port map (
+      clk_i => clk_i,
+      a_i   => a_s(6 downto 0),
+      we_i  => ram_wr_s,
+      ena_i => vdd_s,
+      d_i   => db_s,
+      d_o   => d_from_ram_s
+    );
+
+
+  -----------------------------------------------------------------------------
+  -- Read MUX
+  -----------------------------------------------------------------------------
+  db_to_cpu_s <= d_from_vdc_s when vdc_cs_n_s = '0' and vdc_rd_n_s = '0' else
+                 d_from_vpp_s when vpp_cs_n_s = '0' and vpp_rd_n_s = '0' else
+                 d_from_ram_s when ram_cs_s = '1' and ram_cs_n_s = '0'   else
+                 joys_s(0)    when rd_n_s = '0' and keyb_dec_s(2) = '0'  else
+                 joys_s(1)    when rd_n_s = '0' and keyb_dec_s(1) = '0'  else
+                 cart_d_i;
+  db_s <=   db_from_cpu_s
+          when db_dir_s = '1' else
+            db_to_cpu_s;
+
+
+  -----------------------------------------------------------------------------
+  -- Process keyb
+  --
+  -- Purpose:
+  --   Decodes and encodes the keyboard lines.
+  --
+  keyb: process (p1_from_cpu_s,
+                 p2_from_cpu_s,
+                 keyb_enc_i,
+                 keyb_dec_s)
+    variable keyb_idx_v : natural range 0 to 7;
+    variable keyb_dec_v : std_logic_vector(7 downto 0);
+  begin
+    -- the following logic implements the 74ls156 decoder chip
+    keyb_dec_v := (others => '1');
+    keyb_idx_v := to_integer(unsigned(p2_from_cpu_s(2 downto 0)));
+    if p1_from_cpu_s(2) = '0' then
+      keyb_dec_v(keyb_idx_v) := '0';
+    end if;
+    -- assign signal and output port
+    keyb_dec_s <= keyb_dec_v(5 downto 0);
+    keyb_dec_o <= keyb_dec_s;
+
+    -- the following logic implements the 74ls148 encoder chip
+    p2_to_cpu_s <= (others => '1');
+    for idx in 0 to 7 loop
+      if keyb_enc_i(14 - idx) = '0' then
+        p2_to_cpu_s(7 downto 5) <= std_logic_vector(to_unsigned(idx, 3));
+        p2_to_cpu_s(4) <= '0';
+        exit;
+      end if;
+    end loop;
+  end process keyb;
+  --
+  -----------------------------------------------------------------------------
+
+
+  -----------------------------------------------------------------------------
+  -- Joystick remapping
+  -----------------------------------------------------------------------------
+  joy: for num in 0 to 1 generate
+    joys_s(num) <= (0 => joy_up_n_i(num),
+                    1 => joy_right_n_i(num),
+                    2 => joy_down_n_i(num),
+                    3 => joy_left_n_i(num),
+                    4 => joy_action_n_i(num),
+                    others => '1');
+  end generate;
+
+  fifo_empty_s <= '1';
+  snd_voice_o <= (others => '0');
+
+
+end struct;

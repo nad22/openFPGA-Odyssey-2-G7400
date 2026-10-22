@@ -1,0 +1,47 @@
+{
+    "input": {
+        "magic": "APF_VER_1",
+        "controllers": [
+            {
+                "type": "default",
+                "mappings": [
+                    {
+                        "id": 1,
+                        "name": "B Button",
+                        "key": "pad_btn_b"
+                    },
+                    {
+                        "id": 2,
+                        "name": "3 Key",
+                        "key": "pad_btn_y"
+                    },
+                    {
+                        "id": 3,
+                        "name": "4 Key",
+                        "key": "pad_btn_x"
+                    },
+                    {
+                        "id": 4,
+                        "name": "Enter Key",
+                        "key": "pad_trig_l"
+                    },
+                    {
+                        "id": 5,
+                        "name": "Clear Key",
+                        "key": "pad_trig_r"
+                    },
+                    {
+                        "id": 6,
+                        "name": "1 Key",
+                        "key": "pad_btn_start"
+                    },					
+                    {
+                        "id": 7,
+                        "name": "2 Key",
+                        "key": "pad_btn_select"
+                    }					
+                ]
+            }
+        ]
+    }
+}
